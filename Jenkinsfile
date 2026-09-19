@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    options {
+        skipDefaultCheckout(true)
+    }
+
     environment {
         DOCKERHUB = 'rono23'
 
@@ -11,6 +15,12 @@ pipeline {
     }
 
     stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
 
         stage('Verify Environment') {
             steps {
@@ -34,7 +44,7 @@ pipeline {
 
                     echo ""
                     echo "========================================"
-                    echo "Docker access"
+                    echo "Docker Access"
                     echo "========================================"
 
                     docker ps
@@ -47,7 +57,7 @@ pipeline {
                 sh '''
                     set -e
 
-                    echo "Validating docker-compose.yml..."
+                    echo "Validating Docker Compose configuration..."
 
                     docker compose config > /dev/null
 
@@ -76,6 +86,11 @@ pipeline {
                     echo "Starting application..."
 
                     docker compose up -d
+
+                    echo "Waiting for application..."
+                    sleep 10
+
+                    docker compose ps
                 '''
             }
         }
@@ -85,27 +100,30 @@ pipeline {
                 sh '''
                     set -e
 
-                    echo "Waiting for containers..."
+                    echo "========================================"
+                    echo "Health Check"
+                    echo "========================================"
 
-                    sleep 10
-
-                    echo ""
-                    echo "Container status:"
                     docker compose ps
 
                     echo ""
-                    echo "Checking container health..."
+                    echo "Checking for exited containers..."
 
                     FAILED=$(docker compose ps --status exited --quiet)
 
                     if [ -n "$FAILED" ]; then
                         echo "ERROR: One or more containers exited."
+
                         docker compose ps
+
+                        echo ""
+                        echo "Container logs:"
                         docker compose logs --tail=100
+
                         exit 1
                     fi
 
-                    echo "Application containers are running."
+                    echo "Health check passed."
                 '''
             }
         }
@@ -115,7 +133,9 @@ pipeline {
                 sh '''
                     set -e
 
-                    echo "Building release images..."
+                    echo "========================================"
+                    echo "Building Release Images"
+                    echo "========================================"
 
                     docker build \
                         -t ${FRONTEND_IMAGE}:${IMAGE_TAG} \
@@ -126,9 +146,9 @@ pipeline {
                         ./backend
 
                     echo ""
-                    echo "Release images:"
-                    docker images | grep -E \
-                        "three-tier-frontend|three-tier-backend"
+                    echo "Images created:"
+                    echo "${FRONTEND_IMAGE}:${IMAGE_TAG}"
+                    echo "${BACKEND_IMAGE}:${IMAGE_TAG}"
                 '''
             }
         }
@@ -160,10 +180,11 @@ pipeline {
                 sh '''
                     set -e
 
-                    echo "Pushing frontend image..."
-                    docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
+                    echo "========================================"
+                    echo "Pushing Images"
+                    echo "========================================"
 
-                    echo "Pushing backend image..."
+                    docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
                     docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
 
                     echo ""
@@ -202,17 +223,6 @@ BUILD FAILED
 Check the failed stage above.
 ========================================
 """
-        }
-
-        cleanup {
-            script {
-                sh '''
-                    if [ -f docker-compose.yml ]; then
-                        echo "Cleaning up Compose containers..."
-                        docker compose down || true
-                    fi
-                '''
-            }
         }
     }
 }
