@@ -1,10 +1,6 @@
 pipeline {
     agent any
 
-    options {
-        skipDefaultCheckout(true)
-    }
-
     environment {
         DOCKERHUB = 'rono23'
 
@@ -15,12 +11,6 @@ pipeline {
     }
 
     stages {
-
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
 
         stage('Verify Environment') {
             steps {
@@ -44,6 +34,14 @@ pipeline {
 
                     echo ""
                     echo "========================================"
+                    echo "Git"
+                    echo "========================================"
+
+                    git status
+                    git log -1 --oneline
+
+                    echo ""
+                    echo "========================================"
                     echo "Docker Access"
                     echo "========================================"
 
@@ -57,7 +55,7 @@ pipeline {
                 sh '''
                     set -e
 
-                    echo "Validating Docker Compose configuration..."
+                    echo "Validating Docker Compose..."
 
                     docker compose config > /dev/null
 
@@ -87,7 +85,7 @@ pipeline {
 
                     docker compose up -d
 
-                    echo "Waiting for application..."
+                    echo "Waiting for containers..."
                     sleep 10
 
                     docker compose ps
@@ -146,9 +144,10 @@ pipeline {
                         ./backend
 
                     echo ""
-                    echo "Images created:"
-                    echo "${FRONTEND_IMAGE}:${IMAGE_TAG}"
-                    echo "${BACKEND_IMAGE}:${IMAGE_TAG}"
+                    echo "Release images created:"
+
+                    docker images | grep -E \
+                        "three-tier-frontend|three-tier-backend" || true
                 '''
             }
         }
@@ -180,15 +179,17 @@ pipeline {
                 sh '''
                     set -e
 
-                    echo "========================================"
-                    echo "Pushing Images"
-                    echo "========================================"
-
+                    echo "Pushing frontend..."
                     docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
+
+                    echo "Pushing backend..."
                     docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
 
                     echo ""
-                    echo "Images pushed successfully:"
+                    echo "========================================"
+                    echo "Images pushed successfully"
+                    echo "========================================"
+
                     echo "${FRONTEND_IMAGE}:${IMAGE_TAG}"
                     echo "${BACKEND_IMAGE}:${IMAGE_TAG}"
                 '''
@@ -218,9 +219,6 @@ Docker Hub push completed.
             echo """
 ========================================
 BUILD FAILED
-========================================
-
-Check the failed stage above.
 ========================================
 """
         }
