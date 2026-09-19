@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My App</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 40px;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: auto;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    form {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 25px;
+    }
+
+    input {
+      flex: 1;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+
+    button {
+      padding: 12px 18px;
+      border: none;
+      border-radius: 6px;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      margin-bottom: 8px;
+      background: #f1f5f9;
+      border-radius: 6px;
+    }
+
+    .delete {
+      background: #dc2626;
+    }
+
+    .delete:hover {
+      background: #b91c1c;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>My App</h1>
+
+    <form id="itemForm">
+      <input
+        id="name"
+        type="text"
+        placeholder="Enter an item"
+        required
+      >
+      <button type="submit">Add</button>
+    </form>
+
+    <ul id="items"></ul>
+  </div>
+
+  <script>
+    const form = document.getElementById("itemForm");
+    const nameInput = document.getElementById("name");
+    const itemsList = document.getElementById("items");
+
+    async function loadItems() {
+      const response = await fetch("/api/items");
+      const items = await response.json();
+
+      itemsList.innerHTML = "";
+
+      items.forEach(item => {
+        const li = document.createElement("li");
+
+        li.innerHTML = `
+          <span>${escapeHtml(item.name)}</span>
+          <button class="delete" onclick="deleteItem(${item.id})">
+            Delete
+          </button>
+        `;
+
+        itemsList.appendChild(li);
+      });
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const name = nameInput.value.trim();
+
+      if (!name) return;
+
+      await fetch("/api/items", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name })
+      });
+
+      nameInput.value = "";
+      loadItems();
+    });
+
+    async function deleteItem(id) {
+      await fetch(`/api/items/${id}`, {
+        method: "DELETE"
+      });
+
+      loadItems();
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    loadItems();
+  </script>
+</body>
+</html>
