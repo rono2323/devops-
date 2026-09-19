@@ -12,23 +12,46 @@ pipeline {
 
     stages {
 
-        stage('Checkout') {
+        stage('Verify Environment') {
             steps {
-                checkout scm
+                sh '''
+                    set -e
+
+                    echo "========================================"
+                    echo "Docker"
+                    echo "========================================"
+
+                    docker --version
+                    docker compose version
+
+                    echo ""
+                    echo "========================================"
+                    echo "Workspace"
+                    echo "========================================"
+
+                    pwd
+                    ls -la
+
+                    echo ""
+                    echo "========================================"
+                    echo "Docker access"
+                    echo "========================================"
+
+                    docker ps
+                '''
             }
         }
 
-        stage('Verify') {
+        stage('Validate Compose') {
             steps {
                 sh '''
-                    echo "Docker version:"
-                    docker --version
+                    set -e
 
-                    echo "Docker Compose version:"
-                    docker compose version
+                    echo "Validating docker-compose.yml..."
 
-                    echo "Project files:"
-                    ls -la
+                    docker compose config > /dev/null
+
+                    echo "Compose configuration is valid."
                 '''
             }
         }
@@ -36,6 +59,10 @@ pipeline {
         stage('Build Application') {
             steps {
                 sh '''
+                    set -e
+
+                    echo "Building application..."
+
                     docker compose build
                 '''
             }
@@ -44,6 +71,10 @@ pipeline {
         stage('Start Application') {
             steps {
                 sh '''
+                    set -e
+
+                    echo "Starting application..."
+
                     docker compose up -d
                 '''
             }
@@ -52,24 +83,53 @@ pipeline {
         stage('Health Check') {
             steps {
                 sh '''
+                    set -e
+
+                    echo "Waiting for containers..."
+
                     sleep 10
 
+                    echo ""
+                    echo "Container status:"
                     docker compose ps
+
+                    echo ""
+                    echo "Checking container health..."
+
+                    FAILED=$(docker compose ps --status exited --quiet)
+
+                    if [ -n "$FAILED" ]; then
+                        echo "ERROR: One or more containers exited."
+                        docker compose ps
+                        docker compose logs --tail=100
+                        exit 1
+                    fi
+
+                    echo "Application containers are running."
                 '''
             }
         }
 
         stage('Build Release Images') {
             steps {
-                sh """
-                    docker build \
-                      -t ${FRONTEND_IMAGE}:${IMAGE_TAG} \
-                      ./frontend
+                sh '''
+                    set -e
+
+                    echo "Building release images..."
 
                     docker build \
-                      -t ${BACKEND_IMAGE}:${IMAGE_TAG} \
-                      ./backend
-                """
+                        -t ${FRONTEND_IMAGE}:${IMAGE_TAG} \
+                        ./frontend
+
+                    docker build \
+                        -t ${BACKEND_IMAGE}:${IMAGE_TAG} \
+                        ./backend
+
+                    echo ""
+                    echo "Release images:"
+                    docker images | grep -E \
+                        "three-tier-frontend|three-tier-backend"
+                '''
             }
         }
 
@@ -83,10 +143,13 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                        echo "$DOCKER_TOKEN" | \
-                        docker login \
-                        -u "$DOCKER_USER" \
-                        --password-stdin
+                        set -e
+
+                        echo "$DOCKER_TOKEN" | docker login \
+                            --username "$DOCKER_USER" \
+                            --password-stdin
+
+                        echo "Docker Hub login successful."
                     '''
                 }
             }
@@ -94,31 +157,62 @@ pipeline {
 
         stage('Push Images') {
             steps {
-                sh """
+                sh '''
+                    set -e
+
+                    echo "Pushing frontend image..."
                     docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
+
+                    echo "Pushing backend image..."
                     docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
-                """
+
+                    echo ""
+                    echo "Images pushed successfully:"
+                    echo "${FRONTEND_IMAGE}:${IMAGE_TAG}"
+                    echo "${BACKEND_IMAGE}:${IMAGE_TAG}"
+                '''
             }
         }
     }
 
     post {
-        always {
-            sh '''
-                docker compose down || true
-            '''
-        }
-
         success {
-            echo "========================================"
-            echo "BUILD SUCCESSFUL"
-            echo "Frontend: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
-            echo "Backend:  ${BACKEND_IMAGE}:${IMAGE_TAG}"
-            echo "========================================"
+            echo """
+========================================
+BUILD SUCCESSFUL
+========================================
+
+Frontend:
+${FRONTEND_IMAGE}:${IMAGE_TAG}
+
+Backend:
+${BACKEND_IMAGE}:${IMAGE_TAG}
+
+Docker Hub push completed.
+========================================
+"""
         }
 
         failure {
-            echo "BUILD FAILED"
+            echo """
+========================================
+BUILD FAILED
+========================================
+
+Check the failed stage above.
+========================================
+"""
+        }
+
+        cleanup {
+            script {
+                sh '''
+                    if [ -f docker-compose.yml ]; then
+                        echo "Cleaning up Compose containers..."
+                        docker compose down || true
+                    fi
+                '''
+            }
         }
     }
 }
